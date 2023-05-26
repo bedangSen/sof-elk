@@ -1,0 +1,167 @@
+If you have ever worked with log files, you know how challenging it can be to extract meaningful information from them. Log files come in different formats, sizes and levels of detail. Sometimes, you may need to analyze a log file that is not supported by any existing tool or framework. In this blog post, I will show you how you can create a parser for a custom log file and add it to SOF-ELK, a powerful open source platform for log analysis.
+
+SOF-ELK stands for Security Operation and Forensics Elasticsearch Logstash Kibana. It is a preconfigured stack of Elasticsearch, Logstash and Kibana that allows you to ingest, parse, enrich and visualize various types of log data. SOF-ELK comes with several parsers for common log formats, such as Apache, Windows Event Logs, Sysmon and more. However, if you have a log file that is not supported by SOF-ELK, you can create your own parser and add it to the platform.
+
+The first step is to understand the structure and content of your log file. For this example, I will use a fictitious log file that contains information about network connections from a firewall. The log file looks like this:
+
+2021-05-26 22:15:23 | 192.168.1.10 | 443 | 8.8.8.8 | 53 | TCP | ALLOW
+2021-05-26 22:16:45 | 192.168.1.11 | 80 | 93.184.216.34 | 80 | TCP | DENY
+2021-05-26 22:17:12 | 192.168.1.12 | 123 | 129.6.15.28 | 123 | UDP | ALLOW
+```
+
+Each line represents a connection event with the following fields separated by pipes:
+
+- Timestamp
+- Source IP address
+- Source port
+- Destination IP address
+- Destination port
+- Protocol
+- Action
+
+The second step is to create a Logstash configuration file that defines how to parse the log file and what fields to extract from it. Logstash is a data processing pipeline that can ingest data from various sources, transform it and send it to various destinations. Logstash uses plugins to perform different tasks, such as input, filter and output plugins.
+
+To create a Logstash configuration file for our custom log file, we need to use the following plugins:
+
+- File input plugin: This plugin allows Logstash to read data from files or directories.
+- Grok filter plugin: This plugin allows Logstash to parse unstructured data using regular expressions.
+- Mutate filter plugin: This plugin allows Logstash to perform various transformations on the data, such as converting data types or adding fields.
+- Elasticsearch output plugin: This plugin allows Logstash to send the data to Elasticsearch, a distributed search and analytics engine.
+
+The Logstash configuration file for our custom log file looks like this:
+
+```
+input {
+file {
+path => "/path/to/custom.log"
+start_position => "beginning"
+sincedb_path => "/dev/null"
+}
+}
+
+filter {
+grok {
+match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} \| %{IP:src_ip} \| %{NUMBER:src_port} \| %{IP:dst_ip} \| %{NUMBER:dst_port} \| %{WORD:protocol} \| %{WORD:action}" }
+remove_field => [ "message", "path", "host" ]
+}
+mutate {
+convert => {
+"src_port" => "integer"
+"dst_port" => "integer"
+}
+add_field => { "[@metadata][index]" => "custom" }
+}
+}
+
+output {
+elasticsearch {
+hosts => [ "localhost:9200" ]
+index => "%{[@metadata][index]}-%{+YYYY.MM.dd}"
+document_id => "%{fingerprint}"
+}
+}
+```
+
+Let's break down this configuration file and see what it does:
+
+- The input section tells Logstash to read data from the custom.log file located in /path/to/custom.log directory. The start_position option tells Logstash to start reading from the beginning of the file, and the sincedb_path option tells Logstash to ignore any previous state of the file.
+- The filter section tells Logstash how to parse and transform the data. The grok filter uses a regular expression to match the message field (which contains the whole line of the log file) and extract the fields we want: timestamp, src_ip, src_port, dst_ip, dst_port, protocol and action. The remove_field option tells Logstash to delete the message, path and host fields that are not needed. The mutate filter converts the src_port and dst_port fields to integers (they are strings by default) and adds a field called [@metadata][index] with the value custom. This field will be used later to name the index in Elasticsearch.
+- The output section tells Logstash where to send the data. The elasticsearch output sends the data to Elasticsearch running on localhost:9200. The index option tells Logstash to name the index using the [@metadata][index] field and the current date (e.g., custom-2023.05.26). The document_id option tells Logstash to use a fingerprint of the event as the unique identifier of the document in Elasticsearch.
+
+The third step is to save this configuration file as custom.conf in /etc/logstash/conf.d directory (or any other directory where Logstash can find it) and restart Logstash.
+
+The fourth step is to verify that the data has been ingested and parsed correctly by Elasticsearch. You can use Kibana, a web-based interface for Elasticsearch, to explore and visualize the data.
+
+To access Kibana, open your web browser and go to http://localhost:5601 (or replace localhost with the IP address of your SOF-ELK machine). You should see something like this:
+
+![Kibana home page](https://i.imgur.com/9yZwqQD.png)
+
+To create an index pattern for our custom index, click on Stack Management on the left sidebar, then click on Index Patterns under Kibana section.
+
+![Index Patterns](https://i.imgur.com/7yLX4Jn.png)
+
+Click on Create index pattern button on the top right corner.
+
+![Create index pattern](https://i.imgur.com/5pV9Z2a.png)
+
+Type custom-* in the Index pattern name field and click on Next step button.
+
+![Index pattern name](https://i.imgur.com/0X2gQxT.png)
+
+Select timestamp as the Time field and click on Create index pattern button.
+
+![Time field](https://i.imgur.com/6lUfj7O.png)
+
+You should see a confirmation message that your index pattern has been created.
+
+![Index pattern created](https://i.imgur.com/5wvzZmR.png)
+
+To view the data in our custom index, click on Discover on the left sidebar.
+
+![Discover](https://i.imgur.com/3lXsWmH.png)
+
+Select custom-* from the index pattern dropdown menu on the top left corner.
+
+![Index pattern dropdown](https://i.imgur.com/4cJtYcN.png)
+
+You should see something like this:
+
+![Discover custom index](https://i.imgur.com/7ZoYzqI.png)
+
+You can see that each document in our custom index has the fields we extracted from our log file using Logstash.
+
+You can also use Kibana to create dashboards and visualizations for our custom index.
+
+For example, you can create a pie chart that shows the distribution of actions (ALLOW or DENY) in our log file.
+
+To do that, click on Visualize on the left sidebar.
+
+![Visualize](https://i.imgur.com/9OjGt0h.png)
+
+Click on Create visualization button on the top right corner.
+
+![Create visualization](https://i.imgur.com/6hMw5sE.png)
+
+Select Pie chart as the visualization type.
+
+![Pie chart](https://i.imgur.com/4u3g9aA.png)
+
+Select custom-* as the source index pattern.
+
+![Source index pattern](https://i.imgur.com/2qyfQrP.png)
+
+On the right panel, click on Add bucket under Buckets section.
+
+![Add bucket](https://i.imgur.com/WnHxu7p.png)
+
+Select Split slices as the aggregation type.
+
+![Split slices](https://i.imgur.com/3vLWlRd.png)
+
+Select Terms as the sub-aggregation type.
+
+![Terms](https://i.imgur.com/tNn0T7o.png)
+
+Select action as the field.
+
+![Field](https://i.imgur.com/wQJGcXy.png)
+
+Click on Apply changes button on top right corner.
+
+![Apply changes](https://i.imgur.com/p6LdCwA.png)
+
+You should see something like this:
+
+![Pie chart result](https://i.imgur.com/wqB4a6E.png)
+
+You can see that most of the connections in our log file were allowed (72%) while some were denied (28%).
+
+You can save this visualization by clicking on Save button on top right corner.
+
+![Save visualization](https://i.imgur.com/Gp2gjxT.png)
+
+Give it a name (e.g., Action distribution) and click on Save and return button.
+
+![Name visualization](https://i.imgur.com/cHmWzjL.png)
+
+You can also
